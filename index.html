@@ -2,128 +2,2017 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Física com Respawn</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0b0f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Sandbox</title>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #111;
+    :root {
+      --bg: #0b0b0f;
+      --panel: rgba(20, 20, 28, 0.78);
+      --panel-solid: #15151d;
+      --stroke: rgba(255, 255, 255, 0.10);
+      --stroke-strong: rgba(255, 255, 255, 0.22);
+      --text: #e8e8f2;
+      --muted: #9a9ab0;
+      --accent: #a855f7;
+      --accent-soft: rgba(168, 85, 247, 0.18);
     }
-    canvas {
-      display: block;
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    canvas { display: block; touch-action: none; }
+
+    /* ---------------- UI overlay ---------------- */
+
+    #ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #ui > * { pointer-events: auto; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    /* ---------------- Top-right: recents + paleta de itens ---------------- */
+
+    #tray {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top, 0px));
+      right: max(12px, env(safe-area-inset-right, 0px));   /* recentes com a folga original */
+      width: min(214px, calc(100vw - 24px));
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      max-height: calc(100% - 24px);
+    }
+
+    /* o botão que expande os itens (e a paleta que ele abre) vai até a parede.
+       align-self: flex-end é obrigatório: com width fixo o "stretch" do pai
+       não se aplica, então sem isso o botão fica colado à ESQUERDA da faixa. */
+    #toggle, #palette { align-self: flex-end; margin-right: -12px; }
+
+    #trayHead {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 9px 6px;
+    }
+
+    #trayTitle {
+      font-size: 10.5px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* contador de quadros por segundo */
+    #fpsInfo {
+      font: 600 9.5px/1 ui-monospace, Consolas, monospace;
+      color: var(--muted);
+      padding: 3px 5px;
+      border-radius: 6px;
+      border: 1px solid var(--stroke);
+      white-space: nowrap;
+    }
+    #fpsInfo[data-lvl="ok"]   { color: #4ade80; border-color: rgba(74,222,128,.28); }
+    #fpsInfo[data-lvl="warn"] { color: #facc15; border-color: rgba(250,204,21,.3); }
+    #fpsInfo[data-lvl="bad"]  { color: #f87171; border-color: rgba(248,113,113,.34); }
+
+    .headBtn {
+      width: 24px; height: 24px; flex: 0 0 auto;
+      display: grid; place-items: center;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      padding: 0;
+    }
+    .headBtn:hover { background: rgba(255,255,255,.07); }
+    .headBtn[data-on="false"] { color: #6b6b80; }
+    #guardBtn { font-size: 11px; }
+
+    /* recents strip */
+    #recentsWrap { padding: 0 8px 8px; flex: 0 0 auto; }
+    #recents {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 5px;
+    }
+    .chip {
+      position: relative;
+      min-width: 0;
+      aspect-ratio: 1 / 1.12;
+      max-height: 56px;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.045);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      cursor: pointer;
+      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+      padding: 0;
+      color: var(--text);
+      font: inherit;
+    }
+    .chip .ic { font-size: 16px; line-height: 1; }
+    .chip .nm {
+      font-size: 8px; color: var(--muted); letter-spacing: .01em;
+      max-width: 100%; padding: 0 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .chip:hover { transform: translateY(-2px); background: rgba(255,255,255,.09); border-color: var(--stroke-strong); }
+    .chip[data-active="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: 0 0 0 1px var(--accent) inset, 0 6px 18px rgba(168,85,247,.22);
+    }
+    .chip[data-active="true"] .nm { color: #e9d5ff; }
+    .chip .ord {
+      position: absolute; top: 3px; left: 5px;
+      font-size: 8px; color: var(--muted); opacity: .8;
+    }
+
+    /* chevron */
+    #toggle {
+      min-height: 26px;
+      max-width: 100%;
+      width: 132px;             /* mesma largura da paleta de itens */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      border: none;
+      color: var(--text);
+      font: 600 11px/1 "Segoe UI", sans-serif;
+      letter-spacing: .04em;
+      padding: 4px 6px;
+    }
+    #toggle .arrow {
+      display: inline-block;
+      transition: transform .22s cubic-bezier(.4,0,.2,1);
+      font-size: 11px;
+    }
+    #toggle[aria-expanded="true"] .arrow { transform: rotate(180deg); }
+
+    /* palette */
+    #palette {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height .24s cubic-bezier(.4,0,.2,1), opacity .16s ease;
+      opacity: 0;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 132px;
+    }
+    #palette.open {
+      max-height: min(70vh, 420px);
+      opacity: 1;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #paletteInner {
+      padding: 8px 8px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+    #paletteGrid {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+    }
+    #paletteGrid .chip {
+      aspect-ratio: auto;
+      width: 100%;
+      min-width: 0;
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 8px;
+      padding: 0 9px;
+      min-height: 30px;
+      max-height: none;
+      height: 30px;
+    }
+    #paletteGrid .chip .ord { display: none; }
+    #paletteGrid .chip .nm {
+      font-size: 11px;
+      color: var(--text);
+      letter-spacing: .02em;
+      text-align: left;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #paletteGrid .chip .ic { font-size: 14px; flex: 0 0 auto; }
+    #paletteGrid .chip[data-active="true"] .nm { color: #e9d5ff; }
+    #paletteGrid { padding-bottom: 2px; }
+    .sep {
+      height: 1px;
+      margin: 2px 0 1px;
+      background: linear-gradient(90deg, rgba(255,255,255,0), rgba(190,200,225,.16) 22%, rgba(190,200,225,.16) 78%, rgba(255,255,255,0));
+      border-radius: 1px;
+      flex: 0 0 auto;
+    }
+    .miniBtn {
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 4px 8px;
+      font: 500 10.5px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    .miniBtn:hover { background: rgba(255,255,255,.1); }
+    .miniBtn.wide { width: 100%; padding: 7px 8px; font-size: 11px; }
+    .miniBtn.danger { color: #ffb4b4; border-color: rgba(255,120,120,.35); }
+    .miniBtn.danger:hover { background: rgba(255,90,90,.16); }
+
+    /* ---------------- Bottom-left hint ---------------- */
+
+    #hint {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      max-width: 340px;
+      padding: 10px 13px;
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--text);
+      display: none;
+    }
+    #hint.show { display: block; }
+    #hint .k { color: #d8b4fe; font-weight: 600; }
+    #hint .sub {
+      margin-top: 5px;
+      padding-top: 5px;
+      border-top: 1px solid var(--stroke);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ---------------- Modal ---------------- */
+
+    #scrim {
+      position: absolute;
+      inset: 0;
+      background: rgba(4, 4, 8, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      place-items: center;
+    }
+    #scrim.open { display: grid; }
+
+    #modal {
+      width: min(340px, calc(100vw - 32px));
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      background: var(--panel-solid);
+      border: 1px solid var(--stroke-strong);
+      border-radius: 16px;
+      box-shadow: 0 30px 80px rgba(0,0,0,.6);
+      animation: pop .18s cubic-bezier(.2,.9,.3,1.2);
+    }
+    @keyframes pop { from { transform: scale(.94) translateY(8px); opacity: 0; } }
+
+    #modalHead {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--stroke);
+    }
+    #modalHead .ic { font-size: 17px; }
+    #modalTitle { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
+    #closeX {
+      margin-left: auto;
+      width: 26px; height: 26px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0;
+    }
+    #closeX:hover { color: var(--text); background: rgba(255,255,255,.07); }
+
+    #modalBody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 13px; }
+
+    .row { display: flex; flex-direction: column; gap: 6px; }
+    .row .lab {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+      font-size: 11.5px; color: var(--text); font-weight: 600;
+    }
+    .row .val {
+      font: 600 11px/1 ui-monospace, Consolas, monospace;
+      color: #d8b4fe;
+      background: rgba(168,85,247,.13);
+      padding: 3px 6px;
+      border-radius: 6px;
+    }
+    .row .help { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+
+    input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 4px; border-radius: 99px;
+      background: rgba(255,255,255,.14);
+      outline: none; margin: 4px 0;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #17171f;
+      box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(168,85,247,.6);
+      cursor: pointer;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 15px; height: 15px; border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #17171f;
+      box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(168,85,247,.6);
+      cursor: pointer;
+    }
+
+    .checkRow { display: flex; align-items: center; gap: 9px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+    .checkRow input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+    .colorRow { display: flex; align-items: center; gap: 9px; }
+    .colorRow input[type=color] {
+      width: 42px; height: 30px; padding: 0; cursor: pointer;
+      border: 1px solid var(--stroke); border-radius: 8px; background: transparent;
+    }
+    .swatches { display: flex; gap: 5px; flex-wrap: wrap; }
+    .sw {
+      width: 20px; height: 20px; border-radius: 6px; cursor: pointer;
+      border: 1px solid rgba(255,255,255,.22);
+    }
+    .sw:hover { transform: scale(1.12); }
+
+    .modalBtns { display: flex; gap: 8px; margin-top: 2px; }
+    .warnBox { display: flex; flex-direction: column; gap: 8px; }
+    .warnMsg { font-size: 12px; line-height: 1.5; color: var(--text); }
+    .warnFoot {
+      font-size: 10.5px; line-height: 1.45; color: #fcd34d;
+      background: rgba(250, 204, 21, .10);
+      border: 1px solid rgba(250, 204, 21, .28);
+      border-radius: 9px; padding: 8px 9px;
+    }
+    .btn {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      font: 600 11.5px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    .btn:hover { background: rgba(255,255,255,.1); }
+    .btn.danger { color: #fca5a5; border-color: rgba(252,165,165,.3); }
+    .btn.danger:hover { background: rgba(248,113,113,.14); }
+
+    @media (max-width: 768px) {
+      #tray { width: min(240px, 92vw); top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); gap: 4px; }
+      #toggle, #palette { align-self: flex-end; margin-right: -10px; }
+      #recents { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+      .chip { max-height: 48px; }
+      .chip .nm { display: none; }
+      #paletteGrid .chip { max-height: 36px; }
+      #paletteGrid .chip .nm { display: block; font-size: 9.5px; }
+      #hint { max-width: calc(100vw - 28px); font-size: 11.5px; }
+    }
+    @media (max-width: 480px) {
+      #tray { width: min(224px, 94vw); right: max(10px, env(safe-area-inset-right)); }
+      .chip { border-radius: 9px; }
+      #palette.open { max-height: 55vh; }
     }
   </style>
 </head>
 <body>
 
+<div id="ui">
+  <div id="tray">
+    <div class="panel" id="recentsWrap">
+      <div id="trayHead">
+        <span id="trayTitle">Recentes</span>
+        <span id="fpsInfo" title="FPS estimado (atual/mediano)">—</span>
+        <button id="guardBtn" class="headBtn" title="Alerta de desempenho: ao desativado, permite criar grandes quantidades (pode travar o dispositivo). Ao ativado, pede confirmação antes de ações pesadas.">🛡</button>
+        <button id="soundBtn" class="headBtn" title="Som do buraco negro" data-on="true">♪</button>
+      </div>
+      <div id="recents"></div>
+    </div>
+
+    <button class="panel" id="toggle" aria-expanded="false" title="Itens (clique para expandir ou recolher)">
+      <span class="arrow">▼</span>
+    </button>
+
+    <div class="panel" id="palette">
+      <div id="paletteInner">
+        <div id="paletteGrid"></div>
+        <div class="sep"></div>
+        <button class="miniBtn wide" id="clearBtn">Limpar</button>
+        <button class="miniBtn wide danger" id="resetSiteBtn" title="Apaga tudo e volta todas as configurações ao padrão">Resetar site</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hint" class="panel"></div>
+
+  <div id="scrim">
+    <div id="modal" role="dialog" aria-modal="true">
+      <div id="modalHead">
+        <span class="ic" id="modalIcon">⚙</span>
+        <span id="modalTitle">Configuração</span>
+        <button id="closeX">✕</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 <script>
-  const { Engine, Render, World, Bodies, Mouse, MouseConstraint, Events, Body } = Matter;
+(() => {
+  "use strict";
+
+  const { Engine, Render, World, Bodies, Body, Events, Query, Sleeping } = Matter;
+
+  /* =========================================================
+     ESTADO / PREFERÊNCIAS (persistidas)
+     ========================================================= */
+
+  const LS_RECENT = "sandbox.recentes.v1";
+  const LS_PREF  = "sandbox.prefs.v2";
+
+  const load = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } };
+  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+
+  const prefs = Object.assign({
+    forca: 25,           // atração do buraco negro (0..160)
+    alcance: 340,
+    espiral: 0.5,
+    bhTamanho: 30,
+    bhCor: "#a855f7",
+    bhSom: true,
+    bhAfetaAgua: false,  // buraco negro puxa a água (padrão: desligado)
+    taxaAgua: 8,
+    densAgua: 1.0,
+    aguaCor: "#2f7bff",
+    ondas: true,
+    ondaAmp: 1,
+    taxaMuro: 18,
+    muroCor: "#b5651d",
+    mudo: false,
+    eraserRadius: 22,
+    guardHeavy: true,
+    waterCap: 2000
+  }, load(LS_PREF, {}));
+
+  let recent = load(LS_RECENT, ["livre", "borracha", "bloco", "buraco", "agua"]);
+  if (!Array.isArray(recent)) recent = [];
+
+  // padrões usados pelos botões "Restaurar padrão" (por config) e pelo reset geral
+  const DEFAULTS = {
+    forca: 25, alcance: 340, espiral: 0.5, bhTamanho: 30, bhCor: "#a855f7",
+    bhSom: true, bhAfetaAgua: false, taxaAgua: 8, densAgua: 1.0, aguaCor: "#2f7bff",
+    ondas: true, ondaAmp: 1, taxaMuro: 18, muroCor: "#b5651d", mudo: false,
+    eraserRadius: 22, guardHeavy: true, waterCap: 2000,
+    forcaLanca: 34, giroLanca: 1
+  };
+  Object.keys(DEFAULTS).forEach(k => { if (!(k in prefs)) prefs[k] = DEFAULTS[k]; });
+
+  // devolve as chaves listadas ao padrão (usado pelo reset de cada config)
+  function resetPrefs(chaves) {
+    for (const k of chaves) if (k in DEFAULTS) prefs[k] = DEFAULTS[k];
+    save(LS_PREF, prefs);
+    save(LS_RECENT, []);
+    if (typeof renderUI === "function") renderUI();
+    return true;
+  }
+
+  function resetarSite() {
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith("sandbox."))
+        .forEach(k => localStorage.removeItem(k));
+    } catch (e) {}
+    location.reload();
+  }
+
+  /* =========================================================
+     ITENS (paleta)
+     ========================================================= */
+
+  const ITENS = [
+    { id: "livre",    nome: "Livre",      ic: "🖱", cor: "#cbd5e1", dica: "Mouse livre: arraste os blocos e solte para lançá-los. Clique duas vezes para ver as ações." },
+    { id: "borracha", nome: "Borracha",    ic: "🧽", cor: "#f87171", dica: "Clique ou arraste para apagar. Clique duas vezes para configurar (limpar tudo e grossura)." },
+    { id: "bloco",    nome: "Bloco",       ic: "🟦", cor: "#4da6ff", dica: "Clique para criar um bloco. Arraste um bloco para mover." },
+    { id: "buraco",   nome: "Buraco Negro", ic: "🕳", cor: "#a855f7", dica: "Clique para criar. Não cai e puxa os blocos. Arraste para mover." },
+    { id: "agua",     nome: "Água",        ic: "💧", cor: "#2f7bff", dica: "Segure para despejar água. Ela acumula e faz os blocos flutuarem." },
+    { id: "muro",     nome: "Muro",        ic: "🧱", cor: "#b5651d", dica: "Arraste com cuidado: desenha tijolos alinhados ao passar." }
+  ];
+  const itemById = id => ITENS.find(i => i.id === id);
+  const MAX_RECENT = 5;
+
+  let tool = "bloco";
+
+  /* =========================================================
+     ÁUDIO (buraco negro)
+     ========================================================= */
+
+  const Audio_ = {
+    ctx: null, master: null, hum: null, timer: 0, ready: false,
+
+    init() {
+      if (this.ctx) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = prefs.mudo ? 0 : 0.5;
+      this.master.connect(this.ctx.destination);
+
+      // zumbido grave do buraco negro
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 320;
+      lp.Q.value = 6;
+      const o1 = this.ctx.createOscillator(); o1.type = "sawtooth"; o1.frequency.value = 46;
+      const o2 = this.ctx.createOscillator(); o2.type = "sine";     o2.frequency.value = 69.5;
+      o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.master);
+      o1.start(); o2.start();
+      this.hum = g;
+      this.ready = true;
+    },
+
+    resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+
+    setMudo(m) {
+      prefs.mudo = m;
+      save(LS_PREF, prefs);
+      if (this.master) this.master.gain.value = m ? 0 : 0.5;
+      if (m) this.pulse(0);
+    },
+
+    // volume do zumbido proporcional à quantidade de buracos
+    level(n) {
+      if (!this.ready) return;
+      const on = prefs.bhSom && !prefs.mudo && n > 0;
+      const target = on ? Math.min(0.16, 0.05 + n * 0.035) : 0;
+      this.hum.gain.setTargetAtTime(target, this.ctx.currentTime, 0.6);
+      this.humEnabled = on;
+    },
+
+    // "swoosh" sincronizado com o ciclo da borda
+    pulse(power) {
+      if (!this.ready || !this.humEnabled || prefs.mudo) return;
+      const t = this.ctx.currentTime;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.10 * power, t + 0.28);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.setValueAtTime(160, t);
+      bp.frequency.exponentialRampToValueAtTime(900, t + 0.7);
+      bp.Q.value = 2.4;
+      const n = this.ctx.createBufferSource();
+      const len = this.ctx.sampleRate * 1.3;
+      const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      n.buffer = buf;
+      n.connect(bp); bp.connect(g); g.connect(this.master);
+      n.start(t); n.stop(t + 1.3);
+    },
+
+    place() {
+      if (!this.ready || prefs.mudo) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(320, t);
+      o.frequency.exponentialRampToValueAtTime(48, t + 0.5);
+      g.gain.setValueAtTime(0.16, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      o.connect(g); g.connect(this.master);
+      o.start(t); o.stop(t + 0.65);
+    },
+
+    pop() {
+      if (!this.ready || prefs.mudo) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(680, t);
+      o.frequency.exponentialRampToValueAtTime(180, t + 0.12);
+      g.gain.setValueAtTime(0.09, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(g); g.connect(this.master);
+      o.start(t); o.stop(t + 0.2);
+    }
+  };
+
+  /* =========================================================
+     MUNDO
+     ========================================================= */
 
   const engine = Engine.create();
+  engine.gravity.y = 1;
+  engine.enableSleeping = true;          // água parada dorme: mais estável e mais leve
   const world = engine.world;
+  const G = engine.gravity.y * engine.gravity.scale; // aceleração da gravidade
 
+  const vw0 = document.documentElement.clientWidth || window.innerWidth || 800;
+  const vh0 = document.documentElement.clientHeight || window.innerHeight || 600;
   const render = Render.create({
     element: document.body,
-    engine: engine,
+    engine,
     options: {
-      width: window.innerWidth,
-      height: window.innerHeight,
+      width: vw0,
+      height: vh0,
       wireframes: false,
-      background: '#111'
+      background: "#0b0b0f",
+      pixelRatio: Math.min(2, window.devicePixelRatio || 1)
     }
   });
-
   Render.run(render);
   Engine.run(engine);
+  render.canvas.style.touchAction = "none";
 
-  function randomColor() {
-    const colors = ["#ff4d4d","#4dff88","#4da6ff","#ffff66","#ff66ff","#66ffff"];
-    return colors[Math.floor(Math.random() * colors.length)];
+  const W = () => render.options.width;
+  const H = () => render.options.height;
+
+  const ground  = Bodies.rectangle(W() / 2, H() + 60, W() * 3, 120, { isStatic: true, friction: .6, label: "cenario" });
+  const leftWall   = Bodies.rectangle(-60, H() / 2, 120, H() * 4, { isStatic: true, label: "cenario" });
+  const rightWall  = Bodies.rectangle(W() + 60, H() / 2, 120, H() * 4, { isStatic: true, label: "cenario" });
+  const ceiling    = Bodies.rectangle(W() / 2, -260, W() * 3, 120, { isStatic: true, label: "cenario" });
+  const scenery = [ground, leftWall, rightWall, ceiling];
+  World.add(world, scenery);
+
+  const blocks = [];
+  const water  = [];
+  const bricks = new Map();   // "c,r" -> body
+  const holes  = [];
+  const trail  = [];          // rastro do buraco negro
+
+  const CAP_WATER = 1100;
+  const WATER_R = 4.2;
+
+  const paletteBox = ["#ff4d4d", "#4dff88", "#4da6ff", "#ffff66", "#ff66ff", "#66ffff", "#ff9f45", "#ffffff"];
+  const randomColor = () => paletteBox[Math.floor(Math.random() * paletteBox.length)];
+
+  /* =========================================================
+     BLOCOS
+     ========================================================= */
+
+  function addBlock(x, y) {
+    const pt = limitaPonto(x, y, 26);
+    const size = Math.random() * 34 + 22;
+    const b = Bodies.rectangle(pt.x, pt.y, size, size, {
+      restitution: 0.35,
+      friction: 0.35,
+      frictionAir: 0.008,
+      density: 0.0012,
+      label: "bloco",
+      chamfer: { radius: 3 },
+      render: { fillStyle: randomColor(), strokeStyle: "rgba(0,0,0,.35)", lineWidth: 1 }
+    });
+    b.wet = 0;
+    blocks.push(b);
+    World.add(world, b);
+    return b;
   }
 
-  const boxes = [];
+  /* =========================================================
+     ÁGUA
+     ========================================================= */
 
-  for (let i = 0; i < 12; i++) {
-    const size = Math.random() * 80 + 30;
+  function capWater() { return Math.max(CAP_WATER, prefs.waterCap || CAP_WATER); }
 
-    const box = Bodies.rectangle(
-      Math.random() * window.innerWidth,
-      Math.random() * 200,
-      size,
-      size,
-      {
-        restitution: 0.6,
-        friction: 0.2,
-        density: 0.002,
-        render: { fillStyle: randomColor() }
-      }
-    );
+  /* ---- paredes invisíveis: em telas pequenas nada escapa da visão ---- */
+  const walls = [];
+  let paredesAtivas = false;
 
-    box.originalSize = size; // guardamos info
-    boxes.push(box);
+  function paredeAtiva() {
+    return W() <= 780;          // celular (retrato ou paisagem)
   }
 
-  // ✅ chão
-  const ground = Bodies.rectangle(
-    window.innerWidth / 2,
-    window.innerHeight + 50,
-    window.innerWidth,
-    100,
-    { isStatic: true }
-  );
+  function montaParedes() {
+    paredesAtivas = paredeAtiva();
+    while (walls.length) World.remove(world, walls.pop());
+    if (!paredesAtivas) return;
+    const w = W(), h = H(), t = 60;
+    const mk = (x, y, ww, hh) => {
+      const b = Bodies.rectangle(x, y, ww, hh, {
+        isStatic: true, friction: 0.6, restitution: 0.05, label: "parede",
+        render: { visible: false }
+      });
+      b.parede = true;
+      walls.push(b);
+      World.add(world, b);
+    };
+    mk(t / 2, h / 2, t, h * 3);              // esquerda
+    mk(w - t / 2, h / 2, t, h * 3);          // direita
+    mk(w / 2, t / 2, w * 3, t);              // topo
+    mk(w / 2, h - t / 2, w * 3, t);          // base
+  }
 
-  // ✅ paredes laterais
-  const leftWall = Bodies.rectangle(-50, window.innerHeight/2, 100, window.innerHeight, { isStatic: true });
-  const rightWall = Bodies.rectangle(window.innerWidth+50, window.innerHeight/2, 100, window.innerHeight, { isStatic: true });
+  // mantém um ponto (e um corpo) dentro da área visível
+  function limitaPonto(x, y, m) {
+    if (!paredesAtivas) return { x, y };
+    const p = m || 10;
+    return {
+      x: Math.max(p, Math.min(W() - p, x)),
+      y: Math.max(p, Math.min(H() - p, y))
+    };
+  }
 
-  // ✅ TETO INVISÍVEL (fora da tela)
-  const ceiling = Bodies.rectangle(
-    window.innerWidth/2,
-    -200, // bem acima da tela
-    window.innerWidth,
-    100,
-    { isStatic: true }
-  );
+  function limitaCorpo(b) {
+    if (!paredesAtivas) return false;
+    const r = (b.circleRadius || Math.max(b.bounds.max.x - b.bounds.min.x, b.bounds.max.y - b.bounds.min.y) / 2) + 1;
+    const p = limitaPonto(b.position.x, b.position.y, r);
+    if (p.x === b.position.x && p.y === b.position.y) return false;
+    Body.setPosition(b, p);
+    const v = b.velocity;
+    if (v.x > 0 && p.x <= r) Body.setVelocity(b, { x: -Math.abs(v.x), y: v.y });
+    if (v.x < 0 && p.x >= W() - r) Body.setVelocity(b, { x: Math.abs(v.x), y: v.y });
+    if (v.y > 0 && p.y <= r) Body.setVelocity(b, { x: v.x, y: -Math.abs(v.y) });
+    if (v.y < 0 && p.y >= H() - r) Body.setVelocity(b, { x: v.x, y: Math.abs(v.y) });
+    return true;
+  }
 
-  World.add(world, [...boxes, ground, leftWall, rightWall, ceiling]);
-
-  // ✅ mouse
-  const mouse = Mouse.create(render.canvas);
-  const mouseConstraint = MouseConstraint.create(engine, {
-    mouse: mouse,
-    constraint: {
-      stiffness: 0.2,
+  function addWater(x, y) {
+    if (water.length >= capWater()) return null;
+    const pt = limitaPonto(x, y, WATER_R + 2);
+    const p = Bodies.circle(pt.x, pt.y, WATER_R + Math.random() * 1.4, {
+      restitution: 0,
+      friction: 0.002,
+      frictionStatic: 0,
+      frictionAir: 0.035,
+      density: 0.0004,
+      slop: 0.02,
+      label: "agua",
       render: { visible: false }
+    });
+    water.push(p);
+    World.add(world, p);
+    return p;
+  }
+
+  function clearWater() { water.forEach(p => World.remove(world, p)); water.length = 0; }
+
+  /* =========================================================
+     MURO DE TIJOLOS
+     ========================================================= */
+
+  const BRICK_W = 20;
+
+  function brickAt(x, y) {
+    const c = Math.round(x / BRICK_W), r = Math.round(y / prefs.taxaMuro);
+    return bricks.get(c + "," + r) || null;
+  }
+
+  function putBrickAt(x, y) {
+    const h = prefs.taxaMuro;
+    const c = Math.round(x / BRICK_W);
+    const r = Math.round(y / h);
+    if (paredesAtivas && (c * BRICK_W < 0 || c * BRICK_W > W() || r * h < 0 || r * h > H())) return;
+    const key = c + "," + r;
+    if (bricks.has(key)) return;
+    const b = Bodies.rectangle(c * BRICK_W, r * h, BRICK_W - 1, Math.max(4, h - 1), {
+      isStatic: true,
+      friction: 0.7,
+      label: "tijolo",
+      render: { visible: false }
+    });
+    b.gw = c; b.gh = r;
+    bricks.set(key, b);
+    World.add(world, b);
+  }
+
+  function drawWall(x0, y0, x1, y1) {
+    // lápis: marca SOMENTE o caminho percorrido pelo cursor, um tijolo por
+    // célula da grade. Nada de preencher área, disco ou raio.
+    const dx = x1 - x0, dy = y1 - y0;
+    const d = Math.hypot(dx, dy);
+    if (d < 0.5) { putBrickAt(x0, y0); return; }
+    const n = Math.max(1, Math.ceil(d / (BRICK_W * 0.6)));
+    for (let i = 1; i <= n; i++) putBrickAt(x0 + (dx * i) / n, y0 + (dy * i) / n);
+  }
+
+  /* =========================================================
+     BURACO NEGRO
+     ========================================================= */
+
+  let holeSeq = 0;
+
+  function addHole(x, y) {
+    const r = prefs.bhTamanho;
+    const body = Bodies.circle(x, y, r, {
+      isStatic: true,            // sem gravidade: fica parado onde for deixado
+      restitution: 0.05,
+      friction: 0.9,
+      label: "buraco",
+      render: { visible: false }
+    });
+    const h = {
+      id: ++holeSeq,
+      body,
+      r,
+      fase: Math.random() * Math.PI * 2,
+      forca: prefs.forca,
+      alcance: prefs.alcance,
+      espiral: prefs.espiral,
+      cor: prefs.bhCor,
+      afetaAgua: prefs.bhAfetaAgua === true,
+      pulso: 0
+    };
+    holes.push(h);
+    World.add(world, body);
+    Audio_.place();
+    if (typeof updateHint === "function") { updateHint(); updateInfo(); }
+    return h;
+  }
+
+  function removeHole(h) {
+    const i = holes.indexOf(h);
+    if (i >= 0) holes.splice(i, 1);
+    World.remove(world, h.body);
+    Audio_.level(holes.length);
+    if (typeof updateHint === "function") { updateHint(); updateInfo(); }
+  }
+
+  function holeAt(x, y, tol) {
+    let best = null, bd = Infinity;
+    for (const h of holes) {
+      const d = Math.hypot(h.body.position.x - x, h.body.position.y - y);
+      const t = tol || h.r * 2.2;
+      if (d < t && d < bd) { bd = d; best = h; }
+    }
+    return best;
+  }
+
+  // rastro: quadradinhos pretos que somem rápido
+  function spawnTrail(h, speed) {
+    const n = Math.min(6, Math.ceil(speed / 12));
+    for (let i = 0; i < n; i++) {
+      trail.push({
+        x: h.body.position.x + (Math.random() - .5) * h.r * 1.1,
+        y: h.body.position.y + (Math.random() - .5) * h.r * 1.1,
+        s: Math.random() * 5 + 2.5,
+        life: 1,
+        decay: 0.022 + Math.random() * 0.02
+      });
+    }
+  }
+
+  /* =========================================================
+     BORRACHA
+     ========================================================= */
+
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+  function eraseAt(x, y, r) {
+    const rad = r || prefs.eraserRadius || 22;
+    let touched = false;
+
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (dist(x, y, b.position.x, b.position.y) < rad) {
+        World.remove(world, b); blocks.splice(i, 1); touched = true;
+      }
+    }
+    for (let i = holes.length - 1; i >= 0; i--) {
+      const h = holes[i];
+      if (dist(x, y, h.body.position.x, h.body.position.y) < rad + h.r) {
+        removeHole(h); touched = true;
+      }
+    }
+    for (let i = water.length - 1; i >= 0; i--) {
+      const p = water[i];
+      if (dist(x, y, p.position.x, p.position.y) < rad) {
+        World.remove(world, p); water.splice(i, 1); touched = true;
+      }
+    }
+    for (const [key, b] of bricks) {
+      if (dist(x, y, b.position.x, b.position.y) < rad) {
+        World.remove(world, b); bricks.delete(key); touched = true;
+      }
+    }
+    return touched;
+  }
+
+  /* =========================================================
+     FÍSICA POR FRAME
+     ========================================================= */
+
+  // grade espacial da água (para empuxo e ondas)
+  const CELL = 40;
+  const COL = 12;                // largura das colunas do nível da água
+  const grid = new Map();
+  const topOf = new Map();       // coluna -> y da gota mais alta (superfície)
+  const levelOf = new Map();     // coluna fina -> nível da água (empuxo)
+  const keyOf = (cx, cy) => cx + ":" + cy;
+  let massaAgua = 0;             // massa média de uma gota
+
+  function buildWaterGrid() {
+    grid.clear();
+    topOf.clear();
+    levelOf.clear();
+    massaAgua = 0;
+    let nCalm = 0;
+    for (let i = 0; i < water.length; i++) {
+      const p = water[i];
+      // só conta a água "assentada". Gotas caindo (jato, chuva) não formam
+      // superfície: se contassem, um bloco receberia empuxo de água que ainda
+      // nem chegou e sairia voando da poça.
+      const vy = p.velocity.y;
+      const calm = vy > -2.4 && vy < 2.4;
+      if (!calm) continue;
+      nCalm++;
+      massaAgua += p.mass;
+      const cx = Math.floor(p.position.x / CELL);
+      const k = keyOf(cx, Math.floor(p.position.y / CELL));
+      let arr = grid.get(k);
+      if (!arr) { arr = []; grid.set(k, arr); }
+      arr.push(p);
+      const top = topOf.get(cx);
+      if (top === undefined || p.position.y < top) topOf.set(cx, p.position.y);
+      const col = Math.floor(p.position.x / COL);
+      const lv = levelOf.get(col);
+      if (lv === undefined || p.position.y < lv) levelOf.set(col, p.position.y);
+    }
+    if (nCalm) massaAgua /= nCalm;
+  }
+
+  function waterNear(x, y, r, out) {
+    out.length = 0;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return out;
+    r = Math.min(r, 400);
+    const c0 = Math.floor((x - r) / CELL), c1 = Math.floor((x + r) / CELL);
+    const r0 = Math.floor((y - r) / CELL), r1 = Math.floor((y + r) / CELL);
+    for (let cx = c0; cx <= c1; cx++) {
+      for (let cy = r0; cy <= r1; cy++) {
+        const arr = grid.get(keyOf(cx, cy));
+        if (arr) for (let i = 0; i < arr.length; i++) out.push(arr[i]);
+      }
+    }
+    return out;
+  }
+
+  const buf = [];
+  let tick = 0;
+
+  // Matter multiplica a força por deltaTime² (≈277). Para trabalhar com
+  // acelerações previsíveis (px/frame²), convertemos via push().
+  const DT2 = (1000 / 60) * (1000 / 60);
+  const ATTR = 0.014;       // força do buraco negro com Força = 100 (px/frame²)
+  const ATTR_AGUA = 0.22;   // fração da força aplicada nas gotas ( só com "Afectar Água" )
+  const WAVE_K = 0.3;       // quanto a água "puxa" a partícula até a velocidade da onda
+  const DRAG_K = 0.055;     // arrasto do bloco dentro da água
+
+  function push(body, ax, ay) {
+    const k = body.mass / DT2;
+    Body.applyForce(body, body.position, { x: ax * k, y: ay * k });
+  }
+
+  const sane = (n, lim) => Number.isFinite(n) && Math.abs(n) < lim;
+  const clamp = (v, lim) => (v > lim ? lim : v < -lim ? -lim : v);
+
+  Events.on(engine, "beforeUpdate", () => {
+    tick++;
+
+    /* ---- atração: buracos negros puxam os blocos ---- */
+    buildWaterGrid();                 // a água também pode ser atraída (precisa da grade)
+    for (let k = 0; k < holes.length; k++) {
+      const h = holes[k];
+      const cx = h.body.position.x, cy = h.body.position.y;
+      const range = h.alcance;
+
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const dx = cx - b.position.x, dy = cy - b.position.y;
+        const d2 = dx * dx + dy * dy;
+        if (!Number.isFinite(d2) || d2 > range * range || d2 < 1) continue;
+        const d = Math.sqrt(d2);
+        const fall = 1 - d / range;
+        // Não empurra o bloco para dentro do núcleo: o corpo do buraco é
+        // estático, e forçar a penetração faz o Matter ejetar o bloco com
+        // violence (ele "voa"). Perto do núcleo a força decai até zero.
+        const guarda = Math.min(1, Math.max(0, (d - h.r) / (h.r * 0.9)));
+        const a = ATTR * h.forca * fall * fall * guarda;
+        if (a <= 0) continue;
+        const rx = dx / d, ry = dy / d;
+        let ax = rx * a, ay = ry * a;
+        if (h.espiral) {                                // tangencial: faz orbitar
+          ax += -ry * a * h.espiral;
+          ay += rx * a * h.espiral;
+        }
+        push(b, ax, ay);
+      }
+
+      // "Afectar Água" (desligado por padrão): o mesmo buraco suga as gotas
+      if (h.afetaAgua) {
+        waterNear(cx, cy, Math.min(range, 320), buf);
+        for (let i = 0; i < buf.length; i++) {
+          const p = buf[i];
+          const dx = cx - p.position.x, dy = cy - p.position.y;
+          const d2 = dx * dx + dy * dy;
+          if (!Number.isFinite(d2) || d2 > range * range || d2 < 1) continue;
+          const d = Math.sqrt(d2);
+          const fall = 1 - d / range;
+          const guarda = Math.min(1, Math.max(0, (d - h.r) / (h.r * 0.9)));
+          const a = ATTR * h.forca * ATTR_AGUA * fall * fall * guarda;
+          if (a <= 0) continue;
+          Sleeping.set(p, false);
+          const rx = dx / d, ry = dy / d;
+          push(p, rx * a, ry * a + rx * a * h.espiral * 0.25);
+        }
+      }
+
+      // animação da borda: expande até "tamanhoX" e some
+      h.fase += 0.0165 + 0.004 * Math.min(1, 60 / Math.max(20, h.r));
+      if (h.fase > Math.PI * 2) {
+        h.fase -= Math.PI * 2;
+        h.pulso = 1;
+        Audio_.pulse(0.75);
+      }
+      h.pulso *= 0.94;
+    }
+
+    /* ---- ondas na superfície ---- */
+    const amp = prefs.ondas ? (prefs.ondaAmp || 1) : 0;
+    if (amp > 0.05) {
+      const prof = CELL * 0.55;                       // profundidade afetada pela onda
+      for (let i = 0; i < water.length; i++) {
+        const p = water[i];
+        const top = topOf.get(Math.floor(p.position.x / CELL));
+        if (top === undefined) continue;
+        const depth = (p.position.y - top) / prof;    // 0 = superfície
+        if (depth >= 1) continue;
+        Sleeping.set(p, false);                       // só a superfície fica acordada
+        // arrasta até uma velocidade horizontal alvo (dissipativo: não injeta
+        // energia, então a poça não explode dentro de um recipiente fechado)
+        const w = (1 - depth) * WAVE_K * amp;
+        const alvo = Math.sin(tick * 0.05 + p.position.x * 0.028) * 1.1;
+        push(p, (alvo - p.velocity.x) * w, 0);
+      }
+    }
+
+    /* ---- empuxo: os blocos boiam conforme a água ---- */
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      const bw = b.bounds.max.x - b.bounds.min.x;
+      const bh = b.bounds.max.y - b.bounds.min.y;
+      if (!(bw > 0) || !(bh > 0)) continue;
+
+      // fração submersa: compara a base do bloco com o nível da água em cada coluna
+      let areaMolhada = 0, larguraTotal = 0;
+      const c0 = Math.floor(b.bounds.min.x / COL), c1 = Math.floor(b.bounds.max.x / COL);
+      for (let cx = c0; cx <= c1; cx++) {
+        const l0 = Math.max(b.bounds.min.x, cx * COL);
+        const l1 = Math.min(b.bounds.max.x, (cx + 1) * COL);
+        const w = l1 - l0;
+        if (w <= 0) continue;
+        larguraTotal += w;
+        const nivel = levelOf.get(cx);
+        if (nivel === undefined) continue;
+        const prof = b.bounds.max.y - nivel;          // quanto da coluna está submerso
+        if (prof > 0) areaMolhada += Math.min(prof, bh) * w;
+      }
+      const frac = larguraTotal > 0 ? Math.min(1, areaMolhada / (bw * bh)) : 0;
+
+      // Empuixo corrigido: a densidade da água precisa ser ≤ 1.0 para
+      // blocos não "voarem" com poucas gotas. Acima de 1.0, um bloco
+      // pode ser impulsionado desnecessariamente pelas gotas acima dele.
+      // Limitar empuxo para nunca exceder o peso do bloco (evita empuxo > gravidade).
+      if (frac <= 0.001) {
+        if (b.wet > 0) { b.frictionAir = 0.008; b.wet = 0; }
+        continue;
+      }
+      b.wet = 1;
+      b.frictionAir = 0.12;
+
+      const peso = b.mass * G;
+      let empuxo = frac * peso * prefs.densAgua;
+
+      // compensação: peso da coluna de água acima do bloco
+      if (massaAgua > 0) {
+        let acima = 0;
+        for (let cx = c0; cx <= c1; cx++) {
+          const top = topOf.get(cx);
+          if (top === undefined || top >= b.bounds.min.y) continue;
+          const y0 = Math.floor(top / CELL), y1 = Math.floor((b.bounds.min.y - 0.01) / CELL);
+          for (let cy = y0; cy <= y1; cy++) {
+            const arr = grid.get(keyOf(cx, cy));
+            if (arr) acima += arr.length;
+          }
+        }
+        empuxo -= Math.min(acima * massaAgua * G, peso * 0.95);
+      }
+
+      // Limitar: empuxo nunca pode exceder 1.05× o peso (evita bloco "voar")
+      empuxo = Math.min(empuxo, peso * 1.05);
+      Body.applyForce(b, b.position, { x: 0, y: -empuxo });
+
+      // blocos acompanham o movimento da água (ondas)
+      waterNear(b.position.x, b.position.y, Math.max(bw, bh) / 2 + 10, buf);
+      if (buf.length) {
+        let vx = 0, vy = 0;
+        for (let j = 0; j < buf.length; j++) { vx += buf[j].velocity.x; vy += buf[j].velocity.y; }
+        vx /= buf.length; vy /= buf.length;
+        push(b, (vx - b.velocity.x) * DRAG_K * frac, (vy - b.velocity.y) * DRAG_K * frac);
+      }
+    }
+
+    /* ---- respawn dos blocos que escapam ---- */
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      if (paredesAtivas) { limitaCorpo(b); continue; }   // celular: parede física segura
+      const x = b.position.x, y = b.position.y;
+      const foraX = x < -260 || x > W() + 260;
+      const foraY = y > H() + 420;
+      if (!sane(x, 1e5) || !sane(y, 1e5) || foraX || foraY) {
+        Body.setPosition(b, { x: W() * (0.2 + Math.random() * 0.6), y: 120 });
+        Body.setVelocity(b, { x: 0, y: 0 });
+        Body.setAngularVelocity(b, 0);
+      } else if (y < -420) {
+        Body.setPosition(b, { x: Math.random() * W(), y: Math.random() * 120 });
+        Body.setVelocity(b, { x: 0, y: 0 });
+        Body.setAngularVelocity(b, 0);
+      }
+      const v = b.velocity;
+      if (!sane(v.x, 1e3) || !sane(v.y, 1e3)) Body.setVelocity(b, { x: 0, y: 0 });
+      else if (Math.abs(v.x) > 24 || Math.abs(v.y) > 24) Body.setVelocity(b, { x: clamp(v.x, 24), y: clamp(v.y, 24) });
+    }
+
+    /* ---- rastro ---- */
+    for (let i = trail.length - 1; i >= 0; i--) {
+      trail[i].life -= trail[i].decay;
+      if (trail[i].life <= 0) trail.splice(i, 1);
+    }
+
+    /* ---- fluxo de água enquanto o mouse está pressionado ---- */
+    if (paredesAtivas && (paintingWater || erasing || dragBody || dragHole)) {
+      const q = limitaPonto(pointer.x, pointer.y);
+      pointer.x = q.x; pointer.y = q.y;
+    }
+    if (paintingWater && water.length < capWater()) {
+      for (let i = 0; i < prefs.taxaAgua; i++) {
+        addWater(pointer.x + (Math.random() - .5) * 16, pointer.y + (Math.random() - .5) * 16);
+      }
     }
   });
 
-  World.add(world, mouseConstraint);
-  render.mouse = mouse;
+  // medidor de FPS para o aviso global
+  let _lastT = performance.now();
+  Events.on(engine, "afterUpdate", () => {
+    const now = performance.now();
+    const dt = now - _lastT;
+    _lastT = now;
+    if (dt > 0 && dt < 500) {
+      fpsSamples.push(dt);
+      if (fpsSamples.length > 60) fpsSamples.shift();
+    }
+  });
+  const fpsSamples = [];
+  function avgFps() {
+    if (fpsSamples.length < 5) return 60;
+    const avg = fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length;
+    return Math.round(1000 / Math.max(1, avg));
+  }
 
-  // ✅ SISTEMA DE RESPAWN
-  Events.on(engine, "beforeUpdate", () => {
-    boxes.forEach(box => {
-      // Se subir muito (acima do teto com margem)
-      if (box.position.y < -300) {
-        Body.setPosition(box, {
-          x: Math.random() * window.innerWidth,
-          y: Math.random() * 100
-        });
-
-        // zera velocidade para evitar bugs
-        Body.setVelocity(box, { x: 0, y: 0 });
-        Body.setAngularVelocity(box, 0);
+  // rede de segurança: se o solver soltar alguma gota, ela é descartada
+  Events.on(engine, "afterUpdate", () => {
+    for (let i = water.length - 1; i >= 0; i--) {
+      const p = water[i];
+      if (!sane(p.position.x, 20000) || !sane(p.position.y, 20000)) {
+        World.remove(world, p);
+        water.splice(i, 1);
+      } else {
+        const v = p.velocity;
+        if (!sane(v.x, 200) || !sane(v.y, 200)) Body.setVelocity(p, { x: 0, y: 0 });
+        else if (Math.abs(v.x) > 9 || Math.abs(v.y) > 9) Body.setVelocity(p, { x: clamp(v.x, 9), y: clamp(v.y, 9) });
+        if (paredesAtivas) limitaCorpo(p);     // nada escapa da tela no celular
       }
+    }
+  });
+
+  /* =========================================================
+     DESENHO CUSTOMIZADO (água, tijolos, buraco negro, rastro)
+     ========================================================= */
+
+  Events.on(render, "afterRender", () => {
+    const ctx = render.context;
+    const px = render.options.pixelRatio || 1;
+    ctx.setTransform(px, 0, 0, px, 0, 0);
+
+    /* água */
+    ctx.fillStyle = prefs.aguaCor;
+    for (let i = 0; i < water.length; i++) {
+      const p = water[i];
+      const s = p.circleRadius * 2;
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(p.position.x - s / 2, p.position.y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+
+    /* tijolos */
+    for (const b of bricks.values()) {
+      const x = b.bounds.min.x, y = b.bounds.min.y;
+      const w = b.bounds.max.x - x, h = b.bounds.max.y - y;
+      ctx.fillStyle = prefs.muroCor;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "rgba(0,0,0,.22)";
+      ctx.fillRect(x, y + h * 0.62, w, Math.max(1, h * 0.1));   // fiada
+      ctx.strokeStyle = "rgba(255,255,255,.13)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+    }
+
+    /* rastro do buraco negro */
+    ctx.fillStyle = "#000";
+    for (let i = 0; i < trail.length; i++) {
+      const t = trail[i];
+      ctx.globalAlpha = Math.max(0, t.life) * 0.85;
+      const s = t.s * t.life;
+      ctx.fillRect(t.x - s / 2, t.y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+
+    /* buracos negros */
+    for (let i = 0; i < holes.length; i++) {
+      const h = holes[i];
+      const cx = h.body.position.x, cy = h.body.position.y;
+      const maxR = h.r * 5.2;          // <- "tamanho X" onde a borda some
+      const t = h.fase / (Math.PI * 2);
+      const rr = h.r * 1.12 + maxR * t;
+
+      ctx.save();
+
+      // brilho difuso
+      const g = ctx.createRadialGradient(cx, cy, h.r * 0.6, cx, cy, rr);
+      g.addColorStop(0, "rgba(0,0,0,.9)");
+      g.addColorStop(0.45, hexA(h.cor, 0.18));
+      g.addColorStop(1, hexA(h.cor, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.fill();
+
+      // borda que expande
+      ctx.strokeStyle = hexA(h.cor, (1 - t) * 0.95);
+      ctx.lineWidth = Math.max(1.5, 3.4 * (1 - t * 0.7));
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // segundo anel defasado
+      const t2 = ((h.fase + Math.PI * 1.35) % (Math.PI * 2)) / (Math.PI * 2);
+      const rr2 = h.r * 1.12 + maxR * t2;
+      ctx.strokeStyle = hexA(h.cor, (1 - t2) * 0.4);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr2, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // núcleo (bola preta)
+      const cg = ctx.createRadialGradient(cx - h.r * .3, cy - h.r * .3, 1, cx, cy, h.r);
+      cg.addColorStop(0, "#14141a");
+      cg.addColorStop(.6, "#05050a");
+      cg.addColorStop(1, "#000");
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, h.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = hexA(h.cor, .9);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, h.r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  });
+
+  function hexA(hex, a) {
+    const h = hex.replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map(c => c + c).join("") : h, 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+
+  /* =========================================================
+     ENTRADA (mouse + toque)
+     ========================================================= */
+
+  const pointer = { x: 0, y: 0, down: false, type: "mouse" };
+  let paintingWater = false;
+  let dragBody = null;
+  let dragOffset = { x: 0, y: 0 };
+  // histórico do arrasto: permite "lançar" o bloco ao soltar
+  const arrasto = { amostras: [], ultimoT: 0 };
+  const ARRASTO_MAX = 90;    // idade(ms) das amostras usadas no lançamento
+  let LANCA_TETO = 34;       // teto do lançamento (ajustável no config do Livre)
+  const LANCA_MIN = 1.6;     // abaixo disso, solta sem empurrar
+  const LANCA_PARADO = 130;  // se o cursor parou antes de soltar, não lança
+
+  function registrarArraste(x, y) {
+    const t = performance.now();
+    arrasto.amostras.push({ x, y, t });
+    while (arrasto.amostras.length > 12) arrasto.amostras.shift();
+    arrasto.ultimoT = t;
+  }
+
+  function velocidadeLancamento() {
+    const a = arrasto.amostras;
+    if (a.length < 2) return { x: 0, y: 0 };
+    const ult = a[a.length - 1];
+    const corte = ult.t - ARRASTO_MAX;
+    // mais antiga amostra dentro da janela; se só a última estiver na janela,
+    // volta mais uma (senão a velocidade daria sempre zero em arrastos lentos)
+    let ini = a[a.length - 1];
+    for (let i = a.length - 2; i >= 0; i--) {
+      if (a[i].t >= corte) { ini = a[i]; break; }
+      ini = a[i];
+    }
+    const dtReal = ult.t - ini.t;
+    if (dtReal > LANCA_PARADO) return { x: 0, y: 0 };   // parou antes de soltar
+    const dt = Math.max(8, dtReal);
+    let vx = (ult.x - ini.x) / dt * 16.667;
+    let vy = (ult.y - ini.y) / dt * 16.667;
+    const m = Math.hypot(vx, vy);
+    if (m > LANCA_TETO) { vx = vx / m * LANCA_TETO; vy = vy / m * LANCA_TETO; }
+    if (m < LANCA_MIN) return { x: 0, y: 0 };
+    return { x: vx, y: vy };
+  }
+
+  function soltarComImpulso() {
+    const b = dragBody;
+    if (!b) return;
+    const v = velocidadeLancamento();
+    // acorda o corpo: blocos que já estão parados há tempo (como os do início
+    // do site) ficariam dormindo e ignorariam a velocidade aplicada
+    Sleeping.set(b, false);
+    Body.setAngularVelocity(b, 0);
+    Body.setVelocity(b, { x: v.x, y: v.y });
+    const giro = prefs.giroLanca == null ? 1 : prefs.giroLanca;
+    const vao = clamp(v.x * 0.55 * giro, -12, 12);
+    if (Math.abs(vao) > 0.5) Body.setAngularVelocity(b, vao / 40);
+    if (Math.abs(v.x) > 1 || Math.abs(v.y) > 1) Audio_.pop();
+    arrasto.amostras.length = 0;
+  }
+  let dragHole = null;
+  let dragTijolo = null;           // mouse livre: arrasta tijolo já desenhado
+  let dragTijoloDe = { x: 0, y: 0 };
+  let wallFrom = null;
+  let erasing = false;
+  let lastTap = { t: 0, x: 0, y: 0 };
+
+  const canvas = render.canvas;
+
+  function pos(ev) {
+    const r = canvas.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+
+  function blockAt(x, y) {
+    const list = blocks.filter(b => Query.point([b], { x, y }).length > 0);
+    if (list.length) {
+      // pega o de menor área (o de cima)
+      list.sort((a, b) => (a.bounds.max.x - a.bounds.min.x) - (b.bounds.max.x - b.bounds.min.x));
+      return list[0];
+    }
+    // fallback: tolerância de 8px
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (x > b.bounds.min.x - 6 && x < b.bounds.max.x + 6 && y > b.bounds.min.y - 6 && y < b.bounds.max.y + 6) return b;
+    }
+    return null;
+  }
+
+  function pickTool(id) {
+    tool = id;
+    pushRecent(id);
+    renderUI();
+    Audio_.init(); Audio_.resume();
+  }
+
+  /* --- aviso global de desempenho (Desfazer / Prosseguir) --- */
+  const Guard = {
+    forcar: false,        // força o aviso (usado nos testes)
+    ate: 0,               // não pergunta de novo até este instante
+    silencio: false,      // "não perguntar de novo nesta sessão"
+
+    // "pesado" = queda de quadros OU cena já muito carregada
+    pesado() {
+      if (this.forcar) return true;
+      if (avgFps() < 45) return true;
+      if (water.length > capWater() * 0.45) return true;
+      if (blocks.length + water.length + bricks.size > 800) return true;
+      return false;
+    },
+
+    // deve mostrar o aviso agora?
+    avisar() {
+      if (!prefs.guardHeavy || this.silencio) return false;
+      if (typeof performance !== "undefined" && performance.now() < this.ate) return false;
+      return this.pesado();
+    }
+  };
+
+  function confirmHeavy(title, msg, onYes) {
+    closeModal();
+    openModal("⚠️", title);
+    const box = document.createElement("div");
+    box.className = "warnBox";
+    box.innerHTML =
+      `<div class="warnMsg">${msg}</div>` +
+      `<div class="warnFoot">⚠️ Este site já está exigindo bastante do seu dispositivo ` +
+      `(<b>${avgFps()} fps</b>). Continuar pode causar atraso, queda de quadros e até travamentos.</div>`;
+    mBody.appendChild(box);
+    addCheck("Não perguntar de novo nesta sessão", Guard.silencio, v => { Guard.silencio = v; });
+    addButtons([
+      { label: "Desfazer", fn: () => closeModal() },
+      { label: "Prosseguir", danger: true, fn: () => {
+        Guard.ate = (typeof performance !== "undefined" ? performance.now() : 0) + 60000;  // 1 min de silêncio
+        closeModal();
+        if (onYes) onYes();
+      } }
+    ]);
+  }
+
+  function canDoHeavy(action, fnYes) {
+    if (!Guard.avisar()) { if (fnYes) fnYes(); return true; }
+    const msg = {
+      agua: "Você vai despejar ainda mais água na cena.",
+      geral: "Esta ação cria vários corpos na simulação.",
+      muitos: "Você já tem muitos objetos na cena.",
+      clear: "Todos os objetos serão removidos de uma vez.",
+      spawn: "Vários objetos serão criados ao mesmo tempo."
+    }[action] || "Esta ação cria vários corpos na simulação.";
+    confirmHeavy("Aviso de desempenho", msg, fnYes);
+    return false;
+  }
+
+  function pushRecent(id) {
+    recent = [id, ...recent.filter(r => r !== id)].slice(0, MAX_RECENT);
+    save(LS_RECENT, recent);
+  }
+
+  canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+  canvas.addEventListener("pointerdown", e => {
+    if (e.button === 2) return;
+    Audio_.init(); Audio_.resume();
+    const p = pos(e);
+    pointer.x = p.x; pointer.y = p.y; pointer.down = true; pointer.type = e.pointerType;
+    canvas.setPointerCapture(e.pointerId);
+    pushRecent(tool);
+
+    // double click / double tap -> configuração
+    const now = performance.now();
+    if (now - lastTap.t < 340 && dist(p.x, p.y, lastTap.x, lastTap.y) < 30) {
+      lastTap.t = 0;
+      endPointer();               // cancela qualquer desenho em andamento
+      openConfigFor(p.x, p.y);
+      return;
+    }
+    lastTap = { t: now, x: p.x, y: p.y };
+
+    switch (tool) {
+      case "livre": {
+        // mouse livre: só pega o que já existe (tijolo ou buraco), nunca cria
+        const hit = blockAt(p.x, p.y);
+        if (hit) {
+          dragBody = hit;
+          dragOffset = { x: hit.position.x - p.x, y: hit.position.y - p.y };
+          arrasto.amostras.length = 0;
+          registrarArraste(hit.position.x, hit.position.y);
+        }
+        const tb = brickAt(p.x, p.y);
+        if (tb) { dragTijolo = tb; dragTijoloDe = { x: tb.position.x - p.x, y: tb.position.y - p.y }; }
+        break;
+      }
+      case "bloco": {
+        const hit = blockAt(p.x, p.y);
+        if (hit) {
+          dragBody = hit;
+          dragOffset = { x: hit.position.x - p.x, y: hit.position.y - p.y };
+          arrasto.amostras.length = 0;
+          registrarArraste(hit.position.x, hit.position.y);
+        } else {
+          let b = null;
+          canDoHeavy("geral", () => { b = addBlock(p.x, p.y); });
+          if (b) {
+            dragBody = b;
+            dragOffset = { x: 0, y: 0 };
+            Audio_.pop();
+          }
+        }
+        break;
+      }
+      case "buraco": {
+        const h = holeAt(p.x, p.y);
+        if (h) {
+          dragHole = h;
+          dragOffset = { x: h.body.position.x - p.x, y: h.body.position.y - p.y };
+        } else {
+          let novo = null;
+          canDoHeavy("geral", () => { novo = addHole(p.x, p.y); });
+          if (novo) {
+            dragHole = novo;
+            Audio_.level(holes.length);
+          }
+        }
+        break;
+      }
+      case "agua":
+        canDoHeavy("agua", () => { paintingWater = true; });
+        break;
+      case "muro":
+        canDoHeavy("geral", () => {
+          wallFrom = { x: pointer.x, y: pointer.y };
+          putBrickAt(pointer.x, pointer.y);
+        });
+        break;
+      case "borracha":
+        erasing = true;
+        if (eraseAt(p.x, p.y)) Audio_.pop();
+        break;
+    }
+    updateInfo();
+  });
+
+  canvas.addEventListener("pointermove", e => {
+    const p = pos(e);
+    pointer.x = p.x; pointer.y = p.y;
+
+    if (wallFrom) {                     // lápis: avança a âncora a cada passo
+      drawWall(wallFrom.x, wallFrom.y, p.x, p.y);
+      wallFrom = { x: p.x, y: p.y };
+    }
+    if (dragBody) {
+      const q = limitaPonto(p.x + dragOffset.x, p.y + dragOffset.y);
+      Body.setPosition(dragBody, q);
+      Body.setVelocity(dragBody, { x: 0, y: 0 });
+      if (pointer.down) registrarArraste(q.x, q.y);
+    }
+    if (dragHole) {
+      const q = limitaPonto(p.x + dragOffset.x, p.y + dragOffset.y);
+      const sp = dist(q.x, q.y, dragHole.body.position.x, dragHole.body.position.y);
+      Body.setPosition(dragHole.body, q);
+      if (sp > 3) spawnTrail(dragHole, sp);
+      Audio_.level(holes.length);
+    }
+    if (dragTijolo) {
+      const q = limitaPonto(p.x + dragTijoloDe.x, p.y + dragTijoloDe.y);
+      Body.setPosition(dragTijolo, q);
+    }
+    if (erasing && eraseAt(p.x, p.y)) { /*_apagando_ */ }
+  });
+
+  function endPointer() {
+    soltarComImpulso();                 // lança o bloco que estava sendo arrastado
+    arrasto.amostras.length = 0;
+    paintingWater = false;
+    erasing = false;
+    wallFrom = null;
+    dragBody = null;
+    dragHole = null;
+    dragTijolo = null;
+    pointer.down = false;
+    updateInfo();
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  window.addEventListener("blur", endPointer);
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeModal();
+    const i = ["1", "2", "3", "4", "5"].indexOf(e.key);
+    if (i >= 0) pickTool(ITENS[i].id);
+  });
+
+  function applyViewport() {
+    const vv = window.visualViewport;
+    const cw = document.documentElement.clientWidth || window.innerWidth || 800;
+    const ch = document.documentElement.clientHeight || window.innerHeight || 600;
+    const w = Math.max(240, Math.round(vv ? vv.width : cw));
+    const h = Math.max(240, Math.round(vv ? vv.height : ch));
+
+    render.options.width = w;
+    render.options.height = h;
+    render.canvas.style.width = w + "px";
+    render.canvas.style.height = h + "px";
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    render.options.pixelRatio = dpr;
+    Render.setPixelRatio(render, dpr);
+
+    Body.setPosition(ground, { x: w / 2, y: h + 60 });
+    Body.setPosition(leftWall, { x: -60, y: h / 2 });
+    Body.setPosition(rightWall, { x: w + 60, y: h / 2 });
+    Body.setPosition(ceiling, { x: w / 2, y: -260 });
+    montaParedes();                 // no celular, prende tudo dentro da tela
+  }
+
+  let vwRaf = 0;
+  function onViewportChange() {
+    if (vwRaf) return;
+    vwRaf = requestAnimationFrame(() => { vwRaf = 0; applyViewport(); });
+  }
+  window.addEventListener("resize", onViewportChange);
+  window.addEventListener("orientationchange", onViewportChange);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", onViewportChange);
+    window.visualViewport.addEventListener("scroll", onViewportChange);
+  }
+applyViewport();
+  LANCA_TETO = prefs.forcaLanca || 34;   // teto de lançamento vindo das preferências
+
+  /* =========================================================
+     UI: recentes, paleta, hints
+     ========================================================= */
+
+  const elRecents = document.getElementById("recents");
+  const elPalette = document.getElementById("paletteGrid");
+  const elPaletteBox = document.getElementById("palette");
+  const elToggle = document.getElementById("toggle");
+  const elHint = document.getElementById("hint");
+  const elSound = document.getElementById("soundBtn");
+  const elFps = document.getElementById("fpsInfo");
+
+  function chipHTML(item, order) {
+    return `<button class="chip" data-id="${item.id}" title="${item.nome}">
+      ${order != null ? `<span class="ord">${order}</span>` : ""}
+      <span class="ic">${item.ic}</span><span class="nm">${item.nome}</span></button>`;
+  }
+
+  function renderUI() {
+    const list = recent.filter(id => itemById(id)).slice(0, MAX_RECENT);
+    elRecents.innerHTML = list.map((id, i) => chipHTML(itemById(id), i + 1)).join("")
+      || `<div style="grid-column:1/-1;font-size:10.5px;color:#6b6b80;padding:4px 2px">nenhum item ainda</div>`;
+
+    elRecents.querySelectorAll(".chip").forEach(c => {
+      c.dataset.active = String(c.dataset.id === tool);
+      c.onclick = () => pickTool(c.dataset.id);
     });
-  });
 
-  // resize
-  window.addEventListener("resize", () => {
-    render.canvas.width = window.innerWidth;
-    render.canvas.height = window.innerHeight;
-  });
+    elPalette.innerHTML = ITENS.map(it => chipHTML(it, null)).join("");
+    elPalette.querySelectorAll(".chip").forEach(c => {
+      c.dataset.active = String(c.dataset.id === tool);
+      c.onclick = () => { pickTool(c.dataset.id); setPalette(false); };
+    });
 
+    updateHint();
+    updateInfo();
+  }
+
+  function updateHint() {
+    const it = itemById(tool);
+    let html = "";
+    if (holes.length > 0) {
+      html += `<div><span class="k">Buraco negro:</span> Clique duas vezes no Buraco Negro para configurar</div>`;
+    }
+    if (it) {
+      html += `<div class="sub"><span class="k">${it.ic} ${it.nome}:</span> ${it.dica}</div>`;
+    }
+    if (html) { elHint.innerHTML = html; elHint.classList.add("show"); }
+    else elHint.classList.remove("show");
+  }
+
+  function updateInfo() {
+    const fps = avgFps();
+    if (elFps) { elFps.textContent = fps + " fps"; elFps.dataset.lvl = fps >= 50 ? "ok" : fps >= 30 ? "warn" : "bad"; }
+    elSound.dataset.on = String(!prefs.mudo);
+  }
+
+  function setPalette(open) {
+    elPaletteBox.classList.toggle("open", open);
+    elToggle.setAttribute("aria-expanded", String(open));
+    // a seta é sempre "▼"; o CSS gira 180° quando aberta (▼ -> ^)
+  }
+  elToggle.onclick = () => setPalette(!elPaletteBox.classList.contains("open"));
+  const elGuard = document.getElementById("guardBtn");
+  function updateGuard() {
+    if (elGuard) elGuard.dataset.on = String(prefs.guardHeavy);
+    if (elGuard) elGuard.title = prefs.guardHeavy ? "Alerta de desempenho: ATIVADO (pede confirmação em ações pesadas)" : "Alerta de desempenho: DESATIVADO (pode travar o dispositivo)";
+  }
+  if (elGuard) elGuard.onclick = () => { prefs.guardHeavy = !prefs.guardHeavy; save(LS_PREF, prefs); updateGuard(); };
+  updateGuard();
+  elSound.onclick = () => { Audio_.init(); Audio_.setMudo(!prefs.mudo); if (!prefs.mudo) Audio_.level(holes.length); updateInfo(); };
+  document.getElementById("clearBtn").onclick = () => {
+    [...blocks].forEach(b => World.remove(world, b)); blocks.length = 0;
+    clearWater();
+    [...bricks.values()].forEach(b => World.remove(world, b)); bricks.clear();
+    [...holes].forEach(removeHole);
+    trail.length = 0;
+    updateHint(); updateInfo();
+  };
+  const elResetSite = document.getElementById("resetSiteBtn");
+  if (elResetSite) elResetSite.onclick = () => confirmHeavy("Resetar o site",
+    "Tudo volta ao padrão de fábrica: cena vazia, sem água, tijolos ou buracos negros, ferramentas recentes apagadas e todas as configurações restauradas. Não é possível desfazer.",
+    resetarSite);
+
+  setInterval(() => { if (holes.length) Audio_.level(holes.length); }, 2000);
+
+  /* =========================================================
+     MODAL DE CONFIGURAÇÃO
+     ========================================================= */
+
+  const scrim = document.getElementById("scrim");
+  const mBody = document.getElementById("modalBody");
+  const mTitle = document.getElementById("modalTitle");
+  const mIcon = document.getElementById("modalIcon");
+
+  document.getElementById("closeX").onclick = closeModal;
+  scrim.addEventListener("pointerdown", e => { if (e.target === scrim) closeModal(); });
+
+  function closeModal() { scrim.classList.remove("open"); mBody.innerHTML = ""; }
+
+  function row(label, valueText) {
+    const d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = `<div class="lab"><span>${label}</span><span class="val">${valueText}</span></div>`;
+    mBody.appendChild(d);
+    return d;
+  }
+
+  function addRange(label, min, max, step, value, fmt, onInput, help) {
+    const r = row(label, fmt(value));
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = min; input.max = max; input.step = step; input.value = value;
+    r.appendChild(input);
+    if (help) {
+      const h = document.createElement("div");
+      h.className = "help"; h.textContent = help;
+      r.appendChild(h);
+    }
+    input.addEventListener("input", () => {
+      const v = parseFloat(input.value);
+      r.querySelector(".val").textContent = fmt(v);
+      onInput(v);
+    });
+    return input;
+  }
+
+  function addCheck(label, checked, onChange) {
+    const wrap = document.createElement("label");
+    wrap.className = "checkRow";
+    wrap.innerHTML = `<input type="checkbox" ${checked ? "checked" : ""}><span>${label}</span>`;
+    mBody.appendChild(wrap);
+    wrap.querySelector("input").addEventListener("change", e => onChange(e.target.checked));
+  }
+
+  function addColor(label, value, onInput, swatches) {
+    const r = document.createElement("div");
+    r.className = "row";
+    r.innerHTML = `<div class="lab"><span>${label}</span></div>`;
+    const line = document.createElement("div");
+    line.className = "colorRow";
+    const input = document.createElement("input");
+    input.type = "color"; input.value = value;
+    line.appendChild(input);
+    const sw = document.createElement("div");
+    sw.className = "swatches";
+    (swatches || []).forEach(c => {
+      const b = document.createElement("div");
+      b.className = "sw"; b.style.background = c; b.title = c;
+      b.onclick = () => { input.value = c; onInput(c); };
+      sw.appendChild(b);
+    });
+    line.appendChild(sw);
+    r.appendChild(line);
+    mBody.appendChild(r);
+    input.addEventListener("input", () => onInput(input.value));
+  }
+
+  function addButtons(list) {
+    const box = document.createElement("div");
+    box.className = "modalBtns";
+    list.forEach(b => {
+      const el = document.createElement("button");
+      el.className = "btn" + (b.danger ? " danger" : "");
+      el.textContent = b.label;
+      el.onclick = b.fn;
+      box.appendChild(el);
+    });
+    mBody.appendChild(box);
+  }
+
+  const BH_SWATCH = ["#a855f7", "#38bdf8", "#f472b6", "#facc15", "#34d399", "#ef4444", "#ffffff"];
+
+  function openModal(icon, title) {
+    mIcon.textContent = icon;
+    mTitle.textContent = title;
+    mBody.innerHTML = "";
+    scrim.classList.add("open");
+  }
+
+  function openConfigFor(x, y) {
+    // buraco negro: clicar em cima dele (ou com a ferramenta buraco selecionada)
+    const h = holeAt(x, y, 34);
+    if (h) return openHoleConfig(h, true);
+    if (tool === "buraco") {
+      if (!holes.length) return;
+      let best = holes[0], bd = Infinity;
+      for (const hh of holes) { const d = dist(x, y, hh.body.position.x, hh.body.position.y); if (d < bd) { bd = d; best = hh; } }
+      return openHoleConfig(best, false);
+    }
+    if (tool === "agua") return openWaterConfig();
+    if (tool === "muro") return openWallConfig();
+    if (tool === "borracha") return openEraserConfig();
+    if (tool === "livre") return openFreeConfig();
+    if (tool === "bloco") return openBlockConfig();
+  }
+
+  function openHoleConfig(h, isSingle) {
+    openModal("🕳", "Configuração: Buraco Negro");
+    addRange("Força", 0, 160, 1, h.forca, v => Math.round(v), v => { h.forca = v; prefs.forca = v; save(LS_PREF, prefs); },
+      "Quanto maior, mais forte o buraco negro puxa os blocos. Os blocos não somem: ficam orbitando o núcleo.");
+    addRange("Alcance", 90, 700, 10, h.alcance, v => Math.round(v) + " px", v => { h.alcance = v; prefs.alcance = v; save(LS_PREF, prefs); },
+      "Distância a partir da qual a atração começa.");
+    addRange("Espiral", 0, 2, 0.05, h.espiral, v => v.toFixed(2), v => { h.espiral = v; prefs.espiral = v; save(LS_PREF, prefs); },
+      "0 = só puxa para o centro · alto = os blocos giram em órbita.");
+    addRange("Tamanho do núcleo", 12, 80, 2, h.r, v => Math.round(v) + " px", v => {
+      h.r = v; prefs.bhTamanho = v; save(LS_PREF, prefs);
+      Body.scale(h.body, v / h.body.circleRadius, v / h.body.circleRadius);
+    }, "Altera o tamanho da bola preta e da zona de sucção.");
+    addColor("Cor da borda", h.cor, c => { h.cor = c; prefs.bhCor = c; save(LS_PREF, prefs); }, BH_SWATCH);
+    addCheck("Som do buraco negro", prefs.bhSom, v => { prefs.bhSom = v; save(LS_PREF, prefs); Audio_.init(); Audio_.level(holes.length); });
+    addCheck("Afectar Água", h.afetaAgua === true, v => { h.afetaAgua = v; prefs.bhAfetaAgua = v; save(LS_PREF, prefs); },
+      "Desligado por padrão. Ao ativar, este buraco negro também puxa (suga) as gotas de água.");
+    addCheck("Aplicar a todos os buracos negros", false, v => {
+      if (!v) return;
+      holes.forEach(o => { o.forca = h.forca; o.alcance = h.alcance; o.espiral = h.espiral; o.cor = h.cor; o.afetaAgua = h.afetaAgua; });
+    });
+    addButtons([
+      { label: "Remover este", danger: true, fn: () => { removeHole(h); closeModal(); updateHint(); updateInfo(); } },
+      { label: "Remover todos", danger: true, fn: () => { [...holes].forEach(removeHole); closeModal(); updateHint(); updateInfo(); } },
+      { label: "Restaurar padrão", fn: () => {
+        resetPrefs(["forca", "alcance", "espiral", "bhTamanho", "bhCor", "bhSom", "bhAfetaAgua"]);
+        h.forca = prefs.forca; h.alcance = prefs.alcance; h.espiral = prefs.espiral;
+        h.cor = prefs.bhCor; h.afetaAgua = prefs.bhAfetaAgua;
+        const f = prefs.bhTamanho / h.body.circleRadius;
+        Body.scale(h.body, f, f); h.r = prefs.bhTamanho;
+        openHoleConfig(h, isSingle);
+      } }
+    ]);
+    if (!isSingle) {
+      const info = document.createElement("div");
+      info.className = "help";
+      info.style.color = "#9a9ab0";
+      info.textContent = "Você configurou o buraco negro mais próximo do clique.";
+      mBody.appendChild(info);
+    }
+  }
+
+  function openWaterConfig() {
+    openModal("💧", "Configuração: Água");
+    addRange("Taxa", 1, 30, 1, prefs.taxaAgua, v => Math.round(v) + " gotas/frame", v => { prefs.taxaAgua = v; save(LS_PREF, prefs); },
+      "Quantidade de mini quadrados azuis criados a cada frame enquanto você pressiona.");
+    addRange("Limite de gotas", 2000, 4000, 500, prefs.waterCap || 2000, v => Math.round(v) + " gotas", v => { prefs.waterCap = Math.round(v); save(LS_PREF, prefs); },
+      "Máximo de gotas de água na tela. Aumentar pode causar lag em dispositivos fracos.");
+    addRange("Densidade (empuxo)", 0, 2.5, 0.05, prefs.densAgua, v => v.toFixed(2) + "×", v => { prefs.densAgua = v; save(LS_PREF, prefs); },
+      "Corrigido para evitar que poucas gotas empurrem blocos com força exagerada (recomenda-se ~0.95 – 1.10). Valores acima de 1.0 ajudam blocos a boiar; valores muito altos podem causar flutuação instável.");
+    addRange("Ondas", 0, 2.5, 0.1, prefs.ondas ? (prefs.ondaAmp || 1) : 0, v => v.toFixed(1), v => {
+      prefs.ondaAmp = v;
+      prefs.ondas = v > 0.05;
+      save(LS_PREF, prefs);
+    }, "Intensidade do movimento de onda na superfície da água.");
+    addColor("Cor da água", prefs.aguaCor, c => { prefs.aguaCor = c; save(LS_PREF, prefs); },
+      ["#2f7bff", "#22d3ee", "#4ade80", "#8b5cf6", "#1e3a8a"]);
+    addButtons([
+      { label: "Água mais calma", fn: () => { water.forEach(p => { Body.setVelocity(p, { x: 0, y: 0 }); }); } },
+      { label: "Esvaziar água", danger: true, fn: () => canDoHeavy("clear", () => { clearWater(); updateInfo(); }) },
+      { label: "Restaurar padrão", fn: () => { resetPrefs(["taxaAgua", "waterCap", "densAgua", "aguaCor", "ondas", "ondaAmp"]); openWaterConfig(); } }
+    ]);
+  }
+
+  function openWallConfig() {
+    openModal("🧱", "Configuração: Muro");
+    addRange("Taxa (espessura)", 6, 60, 2, prefs.taxaMuro, v => Math.round(v) + " px", v => { prefs.taxaMuro = v; save(LS_PREF, prefs); },
+      "Grossura do muro de tijolos construído ao arrastar.");
+    addColor("Cor do tijolo", prefs.muroCor, c => { prefs.muroCor = c; save(LS_PREF, prefs); },
+      ["#b5651d", "#a63c2f", "#7a7f87", "#c9a227", "#4b5563", "#8b5e3c"]);
+    addButtons([
+      { label: "Remover todos os muros", danger: true, fn: () => confirmHeavy("Remover todos os muros", "Todos os tijolos serão apagados.", () => { [...bricks.values()].forEach(b => World.remove(world, b)); bricks.clear(); updateInfo(); }) },
+      { label: "Restaurar padrão", fn: () => { resetPrefs(["taxaMuro", "muroCor"]); openWallConfig(); } }
+    ]);
+  }
+
+  function openFreeConfig() {
+    openModal("🖱", "Configuração: Livre");
+    addRange("Força do lançamento", 4, 90, 2, prefs.forcaLanca || 34, v => Math.round(v) + " px/frame", v => {
+      prefs.forcaLanca = Math.round(v); save(LS_PREF, prefs); LANCA_TETO = Math.round(v);
+    }, "Quão forte o bloco é jogado ao ser solto depois de arrastado.");
+    addRange("Giro do lançamento", 0, 3, 0.1, prefs.giroLanca == null ? 1 : prefs.giroLanca, v => v.toFixed(1), v => {
+      prefs.giroLanca = v; save(LS_PREF, prefs);
+    }, "Quanto o bloco gira no ar conforme a direção do lançamento.");
+    addButtons([
+      { label: "Apagar blocos", danger: true, fn: () => { [...blocks].forEach(b => World.remove(world, b)); blocks.length = 0; updateInfo(); } },
+      { label: "Fechar", fn: closeModal }
+    ]);
+    const ajuda = document.createElement("div");
+    ajuda.className = "help";
+    ajuda.innerHTML = "Com <b>Livre</b> você só arrasta o que já existe (blocos e tijolos) e solta para lançar. Clique duas vezes num buraco negro para configurá-lo.";
+    mBody.appendChild(ajuda);
+  }
+
+  function openBlockConfig() {
+    openModal("🟦", "Configuração: Bloco");
+    addButtons([
+      { label: "Espalhar 10 blocos", fn: () => canDoHeavy("spawn", () => { for (let i = 0; i < 10; i++) addBlock(120 + Math.random() * (W() - 240), 80 + Math.random() * 200); }) },
+      { label: "Cair do céu", fn: () => canDoHeavy("spawn", () => { for (let i = 0; i < 8; i++) addBlock(Math.random() * W(), -40); }) },
+      { label: "Apagar blocos", danger: true, fn: () => { [...blocks].forEach(b => World.remove(world, b)); blocks.length = 0; updateInfo(); } },
+      { label: "Resetar site", danger: true, fn: () => confirmHeavy("Resetar o site",
+        "Tudo volta ao padrão de fábrica: cena vazia, sem água, tijolos ou buracos negros, ferramentas recentes apagadas e todas as configurações restauradas. Não é possível desfazer.",
+        resetarSite) }
+    ]);
+  }
+
+  function openEraserConfig() {
+    openModal("🧽", "Configuração: Borracha");
+    addRange("Grossura da borracha", 6, 90, 1, prefs.eraserRadius || 22, v => Math.round(v) + " px", v => {
+      prefs.eraserRadius = Math.round(v); save(LS_PREF, prefs);
+    }, "Raio da área apagada ao clicar ou arrastar a borracha.");
+    addButtons([
+      { label: "Apagar tudo", danger: true, fn: () => {
+        confirmHeavy("Apagar tudo",
+          "Todos os blocos, gotas de água, tijolos e buracos negros serão removidos. Não é possível desfazer depois.",
+          () => { document.getElementById("clearBtn").click(); });
+      }},
+      { label: "Fechar", fn: closeModal },
+      { label: "Restaurar padrão", fn: () => { resetPrefs(["eraserRadius"]); openEraserConfig(); } }
+    ]);
+  }
+
+  /* =========================================================
+     INÍCIO
+     ========================================================= */
+
+  if (!recent.length) recent = ["livre","borracha","bloco","buraco","agua"];
+  renderUI();
+  // blocos iniciais espalhados (sem sobreposição, para não gerar explosões de colisão)
+  for (let i = 0; i < 6; i++) {
+    addBlock(
+      (W() * (i + 0.5)) / 6 + (Math.random() - 0.5) * 24,
+      90 + (i % 2) * 64 + Math.random() * 30
+    );
+  }
+  updateInfo();
+
+})();
 </script>
 
 </body>
